@@ -251,6 +251,8 @@ export interface AuditAccessRequest {
   requesterEmail: string;
   scope: "read-only" | "full-audit";
   rationale: string;
+  reviewerNotes?: string;
+  requestedExpiresAt?: string;
   status:
     | "pending"
     | "approved"
