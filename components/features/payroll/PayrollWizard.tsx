@@ -55,12 +55,39 @@ function stepIndex(step: PayrollWizardStep): number {
   return STEPS.findIndex((s) => s.key === step);
 }
 
+function getPeriodKey(dateLike?: string | null): string {
+  if (!dateLike) return "unknown";
+
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return "unknown";
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function findConflictingRuns(employeeIds: string[]): PayrollRun[] {
   return MOCK_PAYROLL_RUNS.filter(
     (run) =>
       run.status === "pending" &&
       run.employeeIds.some((employeeId) => employeeIds.includes(employeeId)),
   );
+}
+
+function findDuplicateRunWarnings(employeeIds: string[]): PayrollRun[] {
+  if (employeeIds.length === 0) return [];
+
+  const selectedSet = new Set(employeeIds);
+  const currentPeriodKey = getPeriodKey(new Date().toISOString());
+
+  return MOCK_PAYROLL_RUNS.filter((run) => {
+    if (run.status !== "pending" && run.status !== "verified") return false;
+
+    const samePeriod = getPeriodKey(run.createdAt) === currentPeriodKey;
+    const employeeOverlap = run.employeeIds.some((employeeId) =>
+      selectedSet.has(employeeId),
+    );
+
+    return samePeriod || employeeOverlap;
+  });
 }
 
 function PayrollWizard() {
@@ -801,7 +828,20 @@ function ConfirmStep({
   const warnings = useMemo(() => {
     const list: string[] = [];
 
-    // 1. Treasury buffer warning
+    // 1. Duplicate-run warning for similar payroll drafts in the current period
+    // or the same employee group. This is a non-blocking review signal because
+    // the goal is to catch likely duplicates without preventing users from
+    // continuing when they have intentionally re-run a cohort in the same cycle.
+    const similarRuns = findDuplicateRunWarnings(
+      selectedEmployees.map((employee) => employee.id),
+    );
+    if (similarRuns.length > 0) {
+      list.push(
+        `This payroll draft overlaps with ${similarRuns.length} existing run${similarRuns.length === 1 ? "" : "s"} in the same period or employee group (${similarRuns.map((run) => run.id).join(", ")}). Review before submitting to avoid a duplicate payroll.` ,
+      );
+    }
+
+    // 2. Treasury buffer warning
     if (
       treasuryBalance >= totalAmount &&
       treasuryBalance - totalAmount < 25000
@@ -811,14 +851,14 @@ function ConfirmStep({
       );
     }
 
-    // 2. Proof expiration warning
+    // 3. Proof expiration warning
     if (store.proofStatus === "success" && isProofNearingExpiration) {
       list.push(
         "The generated ZK proof is nearing its expiration. Submit now or re-generate if delayed.",
       );
     }
 
-    // 3. Optional metadata warning
+    // 4. Optional metadata warning
     const hasMissingOptionalMetadata = selectedEmployees.some((emp) => {
       const fullEmp = MOCK_EMPLOYEES.find((e) => e.id === emp.id);
       return (

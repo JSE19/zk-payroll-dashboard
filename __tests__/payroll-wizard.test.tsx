@@ -206,6 +206,23 @@ describe("PayrollWizard UI & Receipt Flow", () => {
     randomSpy.mockRestore();
   });
 
+  it("shows a duplicate-run warning for a payroll draft in the same period", () => {
+    vi.setSystemTime(new Date("2025-03-15T12:00:00Z"));
+
+    usePayrollWizardStore.setState({
+      currentStep: "confirm",
+      employeeIds: ["emp_005"],
+      totalAmount: 4200,
+      proofStatus: "success",
+    });
+
+    render(<PayrollWizard />);
+
+    expect(screen.getByText("Warning")).toBeInTheDocument();
+    expect(screen.getByText("Payroll Warnings Detected")).toBeInTheDocument();
+    expect(screen.getByText(/same period or employee group/i)).toBeInTheDocument();
+  });
+
   it("blocks submission when a conflicting payroll draft exists", () => {
     usePayrollWizardStore.setState({
       currentStep: "confirm",
